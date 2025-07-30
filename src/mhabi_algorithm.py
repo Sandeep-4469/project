@@ -1,33 +1,6 @@
 import pandas as pd
 
-# --- New function to calculate a proxy suicide risk score ---
-def _calculate_proxy_suicide_risk(raw_data):
-    """
-    Calculates a proxy suicide risk score (1-10) based on other clinical indicators.
-    This replaces manual user input for the risk score.
-    """
-    proxy_score = 1  # Start with a baseline score
-    
-    # Add points based on high-severity indicators
-    if raw_data['er_visits_last_year'] >= 2:
-        proxy_score += 3
-    elif raw_data['er_visits_last_year'] == 1:
-        proxy_score += 1
-
-    if raw_data['missed_work_school_days'] >= 20:
-        proxy_score += 2
-    elif raw_data['missed_work_school_days'] >= 10:
-        proxy_score += 1
-        
-    if raw_data['dalys'] >= 0.3:
-        proxy_score += 2
-    elif raw_data['dalys'] >= 0.2:
-        proxy_score += 1
-
-    # Ensure the score is capped between 1 and 10
-    return min(proxy_score, 10)
-
-# --- Normalization Tiered Thresholds (Unchanged) ---
+# --- Normalization Tiered Thresholds ---
 def _normalize_wait_time(days):
     if days <= 7: return 10
     if days <= 30: return 40
@@ -60,23 +33,23 @@ def _normalize_suicide_risk(risk_score):
 
 def calculate_mhabi(patient_data_row):
     """
-    Calculates the MHABI score for a single patient.
-    Now includes automatic calculation of the suicide risk score.
+    Calculates the MHABI score for a single patient using user-provided inputs.
     """
-    # --- Create a mutable copy ---
-    raw_data = dict(patient_data_row)
-    
-    # --- Step 0: Calculate Proxy Suicide Risk ---
-    # This is the key change: the risk score is now generated here.
-    raw_data['suicide_risk_score'] = _calculate_proxy_suicide_risk(raw_data)
+    # --- Raw Input Values ---
+    raw_wait_time = patient_data_row['wait_time_days']
+    raw_dalys = patient_data_row['dalys']
+    raw_er_visits = patient_data_row['er_visits_last_year']
+    raw_missed_work = patient_data_row['missed_work_school_days']
+    # Suicide risk is now taken directly from the input
+    raw_suicide_risk = patient_data_row['suicide_risk_score']
 
     # --- Step 1: Normalization ---
     norm_scores = {
-        "Wait Time": _normalize_wait_time(raw_data['wait_time_days']),
-        "DALYs/YLDs": _normalize_dalys(raw_data['dalys']),
-        "ER Utilization": _normalize_er_visits(raw_data['er_visits_last_year']),
-        "Missed Work/School": _normalize_missed_work(raw_data['missed_work_school_days']),
-        "Suicide Risk": _normalize_suicide_risk(raw_data['suicide_risk_score'])
+        "Wait Time": _normalize_wait_time(raw_wait_time),
+        "DALYs/YLDs": _normalize_dalys(raw_dalys),
+        "ER Utilization": _normalize_er_visits(raw_er_visits),
+        "Missed Work/School": _normalize_missed_work(raw_missed_work),
+        "Suicide Risk": _normalize_suicide_risk(raw_suicide_risk)
     }
 
     # --- Step 2: Weighted Composite Score ---
@@ -89,14 +62,14 @@ def calculate_mhabi(patient_data_row):
     # --- Step 3: Risk Amplification Logic ---
     amplified = False
     final_score = subtotal
-    if raw_data['suicide_risk_score'] >= 7 and raw_data['er_visits_last_year'] >= 2:
+    if raw_suicide_risk >= 7 and raw_er_visits >= 2:
         final_score *= 1.1
         amplified = True
     
     final_score = min(final_score, 100)
     
+    # Return the calculated values
     return {
-        "raw_data_with_risk": raw_data, # Return the full raw data including the new risk score
         "mhabi_score": round(final_score, 2),
         "normalized_scores": norm_scores,
         "risk_amplified": amplified
@@ -107,14 +80,13 @@ def process_dataframe(df):
     if df.empty:
         return df
 
-    # We need to process row by row since the risk score is now dynamic
-    results_list = []
-    for _, row in df.iterrows():
-        result = calculate_mhabi(row)
-        # Combine original data with calculated scores for the new row
-        processed_row = {**row.to_dict(), **result}
-        del processed_row['raw_data_with_risk'] # Avoid redundancy
-        results_list.append(processed_row)
-        
-    return pd.DataFrame(results_list)
+    # Use the more efficient .apply method now that calculation is stateless
+    results_series = df.apply(calculate_mhabi, axis=1)
 
+    # Combine results with the original dataframe
+    processed_df = df.copy()
+    processed_df['mhabi_score'] = results_series.apply(lambda x: x['mhabi_score'])
+    processed_df['risk_amplified'] = results_series.apply(lambda x: x['risk_amplified'])
+    processed_df['normalized_scores'] = results_series.apply(lambda x: x['normalized_scores'])
+
+    return processed_df
