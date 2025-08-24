@@ -65,11 +65,11 @@ else:
             else:
                 suggested_id = "P001"
             patient_id = st.text_input("Patient ID", value=suggested_id)
-            region = st.selectbox("Region", options=sorted(existing_data['region'].unique()) if not existing_data.empty else ["North", "South", "East", "West"])
+            region = st.selectbox("Region", options=["North", "South", "East", "West"])
             
         with c2:
-            age_group = st.selectbox("Age Group", options=sorted(existing_data['age_group'].unique()) if not existing_data.empty else ["18-24", "25-34", "35-44", "45-54", "55+"])
-            gender = st.selectbox("Gender", options=sorted(existing_data['gender'].unique()) if not existing_data.empty else ["Female", "Male", "Non-binary"])
+            age_group = st.selectbox("Age Group", options=["18-24", "25-34", "35-44", "45-54", "55+"])
+            gender = st.selectbox("Gender", options=["Female", "Male", "Non-binary"])
             
         with c3:
             wait_time_days = st.number_input("Wait Time (days)", min_value=0, step=1)
